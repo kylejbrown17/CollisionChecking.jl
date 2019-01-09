@@ -26,19 +26,20 @@ export
     get_signed_area,
     get_edge,
     get_center,
+    sort_pts!,
     ensure_pts_sorted_by_min_polar_angle!,
     shift!,
     rotate!,
     mirror!,
-    minkowksi_sum!,
+    minkowski_sum!,
     minkowski_difference!,
     is_colliding,
     get_collision_time
 
 abstract type Shape end
-mutable struct ConvexPolygon{T} <: Shape
-    pts::Vector{T} # ordered counterclockwise along polygon boundary s.t. first edge has minimum polar angle in [0,2π]
-    npts::Int # number of pts that are currently used (since we preallocate a longer array)
+@with_kw mutable struct ConvexPolygon{T} <: Shape
+    pts::Vector{T} = Vector{VecE2{Float64}}() # ordered counterclockwise along polygon boundary s.t. first edge has minimum polar angle in [0,2π]
+    npts::Int = length(pts) # number of pts that are currently used (since we preallocate a longer array)
 end
 ConvexPolygon(npts::Int) = ConvexPolygon(Array{VecE2}(undef, npts), 0)
 ConvexPolygon(pts::Vector{T} where T <: VecE2) = ConvexPolygon(pts, length(pts))
@@ -464,8 +465,8 @@ function Base.copyto!(dest::ConvexPolygon, src::ConvexPolygon)
     dest
 end
 function Base.push!(poly::ConvexPolygon, v::VecE2)
-    poly.pts[poly.npts+1] = v
-    poly.npts += 1
+    push!(poly.pts, v)
+    poly.npts = length(poly.pts)
     poly
 end
 function Base.in(v::VecE2, poly::ConvexPolygon)
@@ -483,13 +484,13 @@ function Base.in(v::VecE2, poly::ConvexPolygon)
     true
 end
 # Base.in(v::VecSE2{Float64}, poly::ConvexPolygon) = in(convert(VecE2, v), poly)
-function Base.show(io::IO, poly::ConvexPolygon)
-    @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
-    for i in 1 : length(poly)
-        print(io, "\t"); show(io, poly.pts[i])
-        print(io, "\n")
-    end
-end
+# function Base.show(io::IO, poly::ConvexPolygon)
+#     @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
+#     for i in 1 : length(poly)
+#         print(io, "\t"); show(io, poly.pts[i])
+#         print(io, "\n")
+#     end
+# end
 
 get_center(poly::ConvexPolygon) = sum(poly.pts) / poly.npts
 function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
@@ -504,58 +505,61 @@ function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
         min_dist
     end
 end
-
-function ensure_pts_sorted_by_min_polar_angle!(poly::ConvexPolygon, npts::Int=poly.npts)
-
-    @assert(npts ≥ 3)
-    @assert(sign(get_signed_area(poly)) == 1) # must be counter-clockwise
-
-    # ensure that edges are sorted by minimum polar angle in [0,2π]
-
-    angle_start = Inf
-    index_start = -1
-    for i in 1 : npts
-        seg = get_edge(poly.pts, i, npts)
-
-        θ = atan(seg.B.y - seg.A.y, seg.B.x - seg.A.x)
-        if θ < 0.0
-            θ += 2π
-        end
-
-        if θ < angle_start
-            angle_start = θ
-            index_start = i
-        end
-    end
-
-    if index_start != 1
-        cyclic_shift_left!(poly.pts, index_start-1, npts)
-    end
+function sort_pts!(poly::ConvexPolygon, npts::Int=poly.npts)
+    """
+    sorts points by polar angle
+    """
+    c = get_center(poly)
+    sort!(poly.pts,by=pt->mod(atan(pt-c)+π/2,2π))
     poly
 end
+# function ensure_pts_sorted_by_min_polar_angle!(poly::ConvexPolygon, npts::Int=poly.npts)
+#
+#     @assert(npts ≥ 3)
+#     sort_pts!(poly)
+#     @assert(sign(get_signed_area(poly)) == 1) # must be counter-clockwise
+#
+#     # ensure that edges are sorted by minimum polar angle in [0,2π]
+#     angle_start = Inf
+#     index_start = -1
+#     for i in 1 : npts
+#         seg = get_edge(poly.pts, i, npts)
+#
+#         θ = mod(atan(seg.B - seg.A),2π)
+#         if θ < angle_start
+#             angle_start = θ
+#             index_start = i
+#         end
+#     end
+#
+#     if index_start != 1
+#         cyclic_shift_left!(poly.pts, index_start-1, npts)
+#     end
+#     poly
+# end
 function shift!(poly::ConvexPolygon, v::VecE2)
     for i in 1 : length(poly)
         poly.pts[i] += v
     end
-    ensure_pts_sorted_by_min_polar_angle!(poly)
+    sort_pts!(poly)
     poly
 end
 function rotate!(poly::ConvexPolygon, θ::Float64)
     for i in 1 : length(poly)
         poly.pts[i] = Vec.rot(poly.pts[i], θ)
     end
-    ensure_pts_sorted_by_min_polar_angle!(poly)
+    sort_pts!(poly)
     poly
 end
 function mirror!(poly::ConvexPolygon)
     for i in 1 : length(poly)
         poly.pts[i] = -poly.pts[i]
     end
-    ensure_pts_sorted_by_min_polar_angle!(poly)
+    sort_pts!(poly)
     poly
 end
 
-function minkowksi_sum!(retval::ConvexPolygon, P::ConvexPolygon, Q::ConvexPolygon)
+function minkowski_sum!(P::ConvexPolygon, Q::ConvexPolygon, retval::ConvexPolygon=ConvexPolygon())
     #=
     For two convex polygons P and Q in the plane with m and n vertices, their Minkowski sum is a
     convex polygon with at most m + n vertices and may be computed in time O (m + n) by a very simple procedure,
@@ -598,11 +602,10 @@ function minkowksi_sum!(retval::ConvexPolygon, P::ConvexPolygon, Q::ConvexPolygo
             θq = index_Q ≤ length(Q) ? get_polar_angle(get_edge(Q, index_Q)) : Inf
         end
     end
-    ensure_pts_sorted_by_min_polar_angle!(retval)
+    sort_pts!(retval)
     retval
 end
-function minkowski_difference!(retval::ConvexPolygon, P::ConvexPolygon, Q::ConvexPolygon)
-
+function minkowski_difference!(P::ConvexPolygon, Q::ConvexPolygon, retval::ConvexPolygon=ConvexPolygon())
     #=
     The minkowski difference is what you get by taking the minkowski sum of a shape and the mirror of another shape.
     So, your second shape gets flipped about the origin (all of its points are negated).
@@ -610,16 +613,15 @@ function minkowski_difference!(retval::ConvexPolygon, P::ConvexPolygon, Q::Conve
     The idea is that you do a binary operation on two shapes to get a new shape,
     and if the origin (the zero vector) is inside that shape, then they are colliding.
     =#
-
-    minkowksi_sum!(retval, P, mirror!(Q))
+    minkowski_sum!(P, mirror!(Q),retval)
 end
 
-function is_colliding(P::ConvexPolygon, Q::ConvexPolygon, temp::ConvexPolygon=ConvexPolygon(length(P) + length(Q)))
-    minkowski_difference!(temp, P, Q)
-    in(VecE2(0,0), temp)
+function is_colliding(P::ConvexPolygon, Q::ConvexPolygon)
+    poly = minkowski_difference!(P, Q)
+    in(VecE2(0.0,0.0), poly)
 end
 function Vec.get_distance(P::ConvexPolygon, Q::ConvexPolygon, temp::ConvexPolygon=ConvexPolygon(length(P) + length(Q)))
-    minkowski_difference!(temp, P, Q)
+    poly = minkowski_difference!(P, Q)
     get_distance(VecE2(0,0), temp)
 end
 
@@ -671,6 +673,5 @@ function get_collision_time(ray::VecSE2{Float64}, poly::ConvexPolygon, ray_speed
 end
 
 ######################################
-
 
 end # module
