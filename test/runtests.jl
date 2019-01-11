@@ -84,6 +84,14 @@ p = ConvexPolygon([
 @test norm(nearest_free_space(Circle(1.9,0.0,1.0),p) - [1.1;0.0]) < 0.000001
 @test norm(nearest_free_space(Circle(1.9,0.0,1.0),Rectangle(p)) - [1.1;0.0]) < 0.000001
 
+
+# @test norm(nearest_in_bounds_space(Circle(4.0,0.0,1.0),p) - [-0.0;0.0]) < 0.000001
+# @test norm(nearest_in_bounds_space(Circle(4.0,0.0,1.0),Rectangle(p)) - [0.0;0.0]) < 0.000001
+# @test norm(nearest_in_bounds_space(Circle(2.1,0.0,1.0),p) - [-1.1;0.0]) < 0.000001
+# @test norm(nearest_in_bounds_space(Circle(2.1,0.0,1.0),Rectangle(p)) - [-1.1;0.0]) < 0.000001
+# @test norm(nearest_in_bounds_space(Circle(1.9,0.0,1.0),p) - [-0.9;0.0]) < 0.000001
+# @test norm(nearest_in_bounds_space(Circle(1.9,0.0,1.0),Rectangle(p)) - [-.9;0.0]) < 0.000001
+
 α = collect(range(0,stop=.9*2π,length=10))
 pts = [VecE2(cos(a),sin(a)) for a in α]
 poly1 = ConvexPolygon(pts)
@@ -93,3 +101,13 @@ mirror!(poly2)
 @test length(poly1) <= length(minkowski_difference!(poly1,poly2)) <= length(poly2)
 shift!(poly2,VecE2(2.0,0.0))
 @test is_colliding(poly1,poly2) == false
+
+p = ConvexPolygon([
+    VecE2(-2.0,-2.0),
+    VecE2(2.0,-2.0),
+    VecE2(2.0,2.0),
+    VecE2(-2.0,2.0),
+    ])
+sort_pts!(p)
+c = Circle(0.0,0.0,1.0)
+@test get_distance(P,Circle())

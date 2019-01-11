@@ -23,6 +23,7 @@ export
     nearest_in_bounds_space,
 
     cyclic_shift_left!,
+    cyclic_shift!,
     get_signed_area,
     get_edge,
     get_center,
@@ -164,7 +165,7 @@ function check_collision(pt::VecE2,polygon::ConvexPolygon)
         end
         q = pt - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
-        d = sign(cross([q;0],[v;0])[end])*norm(q - v*dot(q,v))
+        d = sign(cross([q;0],[v;0])[end])
         if d > 0.0
             return false
         end
@@ -376,7 +377,7 @@ function nearest_free_space(circle::Circle,polygon::ConvexPolygon)
         q = VecE2(circle.x,circle.y) - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         b = v*dot(q,v) # footpoint
-        d = sign(cross([q;0],[v;0])[end]) # direction (outward is positive)
+        d = sign(cross(q,v)) # direction (outward is positive)
         dv = q - b
         # dv = sign(cross([q;0],[v;0])[end])*(q - b) # normal vector pointing outward from polygon face
         if d > 0 && norm(dv) > circle.r
@@ -391,10 +392,41 @@ function nearest_free_space(circle::Circle,polygon::ConvexPolygon)
     end
     return Δmin
 end
+function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
+    """
+        get vector to nearest free space between circular agent and rectangular obstacle
+    """
+    Δmin = VecE2(Inf,Inf)
+    n = length(polygon.pts)
+    for i in 1:n
+        pt1 = polygon.pts[i]
+        if i < n
+            pt2 = polygon.pts[i+1]
+        else
+            pt2 = polygon.pts[1]
+        end
+        # projection
+        q = VecE2(circle.x,circle.y) - pt1
+        v = (pt2-pt1)/norm(pt2-pt1)
+        b = v*dot(q,v) # footpoint
+        d = sign(cross(q,v)) # direction (outward is positive)
+        dv = q - b
+        if d < 0 && norm(dv) > circle.r
+            return VecE2(0.0,0.0)
+        else
+            target = circle.r * -d*dv/norm(dv) # pointing inside
+            Δ = target - dv
+            if norm(Δ) < norm(Δmin)
+                Δmin = VecE2(Δ)
+            end
+        end
+    end
+    return Δmin
+end
 
 ######################################
 
-function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(a))
+function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(arr))
     #=
     Perform a cyclic rotation of the elements in the array, in place
         d = amount to shift
@@ -419,6 +451,12 @@ function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(a))
         arr[j] = temp
     end
     arr
+end
+function cyclic_shift!(arr::AbstractVector, d::Int)
+    idxs = collect(1:length(arr))
+    i = (d == length(arr)) ? 1 : d + 1
+    idxs = [idxs[i:end];idxs[1:i-1]]
+    arr = arr[idxs]
 end
 
 ######################################
@@ -453,6 +491,7 @@ end
 
 Base.length(poly::ConvexPolygon) = poly.npts
 Base.isempty(poly::ConvexPolygon) = poly.npts == 0
+Base.copy(p::ConvexPolygon) = ConvexPolygon(copy(p.pts))
 get_edge(P::ConvexPolygon, i::Int) = get_edge(P.pts, i, P.npts)
 get_signed_area(poly::ConvexPolygon) = get_signed_area(poly.pts, poly.npts)
 function Base.empty!(poly::ConvexPolygon)
@@ -484,13 +523,13 @@ function Base.in(v::VecE2, poly::ConvexPolygon)
     true
 end
 # Base.in(v::VecSE2{Float64}, poly::ConvexPolygon) = in(convert(VecE2, v), poly)
-# function Base.show(io::IO, poly::ConvexPolygon)
-#     @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
-#     for i in 1 : length(poly)
-#         print(io, "\t"); show(io, poly.pts[i])
-#         print(io, "\n")
-#     end
-# end
+function Base.show(io::IO, poly::ConvexPolygon)
+    @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
+    for i in 1 : length(poly)
+        print(io, "\t"); show(io, poly.pts[i])
+        print(io, "\n")
+    end
+end
 
 get_center(poly::ConvexPolygon) = sum(poly.pts) / poly.npts
 function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
@@ -504,6 +543,9 @@ function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
         end
         min_dist
     end
+end
+function Vec.get_distance(v::VecE2, poly::ConvexPolygon; solid::Bool=true)
+    get_distance(poly,v;solid=solid)
 end
 function sort_pts!(poly::ConvexPolygon, npts::Int=poly.npts)
     """
@@ -605,6 +647,26 @@ function minkowski_sum!(P::ConvexPolygon, Q::ConvexPolygon, retval::ConvexPolygo
     sort_pts!(retval)
     retval
 end
+function minkowski_sum!(P::ConvexPolygon, Q::Circle, retval::ConvexPolygon=ConvexPolygon())
+    """
+    Not a true minkowski_sum, since it leaves the corners sharp
+    """
+    for i in 1:length(P)
+        seg1 = get_edge(P,i)
+        seg2 = i > 1 ? get_edge(P,i-1) : get_edge(P,length(P))
+        seg2 = LineSegment(seg2.B,seg2.A) # reverse
+        v1 = rot(normalize(seg1.B - seg1.A),-π/2)
+        v2 = rot(normalize(seg2.B - seg2.A),π/2)
+        v = (v1 + v2)/2
+        a = norm(v)
+        b = norm(v2-v1)/2
+        c = b^2 / a
+        v = (Q.r * (a+c)) * normalize(v)
+        push!(retval,P.pts[i] + (v + VecE2(Q.x,Q.y)))
+    end
+    # sort_pts!(retval)
+    retval
+end
 function minkowski_difference!(P::ConvexPolygon, Q::ConvexPolygon, retval::ConvexPolygon=ConvexPolygon())
     #=
     The minkowski difference is what you get by taking the minkowski sum of a shape and the mirror of another shape.
@@ -615,62 +677,45 @@ function minkowski_difference!(P::ConvexPolygon, Q::ConvexPolygon, retval::Conve
     =#
     minkowski_sum!(P, mirror!(Q),retval)
 end
+function minkowski_difference!(P::ConvexPolygon, Q::Circle, retval::ConvexPolygon=ConvexPolygon())
+    minkowski_sum!(P,Q)
+end
 
 function is_colliding(P::ConvexPolygon, Q::ConvexPolygon)
     poly = minkowski_difference!(P, Q)
     in(VecE2(0.0,0.0), poly)
 end
-function Vec.get_distance(P::ConvexPolygon, Q::ConvexPolygon, temp::ConvexPolygon=ConvexPolygon(length(P) + length(Q)))
+function Vec.get_distance(P::ConvexPolygon, Q::ConvexPolygon)
     poly = minkowski_difference!(P, Q)
-    get_distance(VecE2(0,0), temp)
+    get_distance(VecE2(0,0), poly)
+end
+function Vec.get_distance(P::ConvexPolygon, C::Circle)
+    poly = minkowski_difference!(P, C)
+    get_distance(VecE2(0,0), poly)
 end
 
-function to_oriented_bounding_box!(retval::ConvexPolygon, center::VecSE2{Float64}, len::Float64, wid::Float64)
+function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
+    """
+        get vector to nearest free space between circular agent and rectangular obstacle
+    """
+    poly = copy(polygon)
+    i = 1
+    while i <= length(poly)
+        npts = length(poly)
+        seg = get_edge(poly,i)
+        v = rot(normalize(seg.B - seg.A),π/2)
+        plane = LineSegment(plane.A+v*circle.r,plane.B+v*circle.r)
+        idxs = collect(1:length(poly))
+        idxs = [idxs[mod(i+2,npts):end];idxs[1:mod(i+1,npts)]]
+        for j in idxs
 
-    @assert(len > 0)
-    @assert(wid > 0)
-    @assert(!isnan(center.θ))
-    @assert(!isnan(center.x))
-    @assert(!isnan(center.y))
-
-    x = polar(len/2, center.θ)
-    y = polar(wid/2, center.θ+π/2)
-
-    C = convert(VecE2,center)
-    retval.pts[1] =  x - y + C
-    retval.pts[2] =  x + y + C
-    retval.pts[3] = -x + y + C
-    retval.pts[4] = -x - y + C
-    retval.npts = 4
-
-    ensure_pts_sorted_by_min_polar_angle!(retval)
-
-    retval
-end
-######################################
-
-function is_colliding(ray::VecSE2{Float64}, poly::ConvexPolygon)
-    # collides if at least one of the segments collides with the ray
-
-    for i in 1 : length(poly)
-        seg = get_edge(poly, i)
-        if intersects(ray, seg)
-            return true
         end
+        pt_sides = [sign(cross(pt,seg.B-seg.A)) for pt in poly.pts]
+        valid_idxs = collect(1:length(poly.pts))[pt_sides .<= 0]
+        new_pt = intersection(plane,get_edge(poly,valid_idxs[1]-1))
+        prev_side = pt_sides[i]
     end
-    false
-end
-function get_collision_time(ray::VecSE2{Float64}, poly::ConvexPolygon, ray_speed::Float64)
-    min_col_time = Inf
-    for i in 1 : length(poly)
-        seg = get_edge(poly, i)
-        col_time = get_intersection_time(Projectile(ray, ray_speed), seg)
-        if !isnan(col_time) && col_time < min_col_time
-            min_col_time = col_time
-        end
-    end
-    min_col_time
-end
+# end
 
 ######################################
 
