@@ -19,7 +19,6 @@ export
     has_intersection,
     check_collision,
     nearest_free_space,
-    check_out_of_bounds,
     nearest_in_bounds_space,
 
     cyclic_shift_left!,
