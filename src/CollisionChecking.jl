@@ -694,28 +694,28 @@ function Vec.get_distance(P::ConvexPolygon, C::Circle)
     get_distance(VecE2(0,0), poly)
 end
 
-function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
-    """
-        get vector to nearest free space between circular agent and rectangular obstacle
-    """
-    poly = copy(polygon)
-    i = 1
-    while i <= length(poly)
-        npts = length(poly)
-        seg = get_edge(poly,i)
-        v = rot(normalize(seg.B - seg.A),π/2)
-        plane = LineSegment(plane.A+v*circle.r,plane.B+v*circle.r)
-        idxs = collect(1:length(poly))
-        idxs = [idxs[mod(i+2,npts):end];idxs[1:mod(i+1,npts)]]
-        for j in idxs
-
-        end
-        pt_sides = [sign(cross(pt,seg.B-seg.A)) for pt in poly.pts]
-        valid_idxs = collect(1:length(poly.pts))[pt_sides .<= 0]
-        new_pt = intersection(plane,get_edge(poly,valid_idxs[1]-1))
-        prev_side = pt_sides[i]
-    end
-# end
+# function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
+#     """
+#         get vector to nearest free space between circular agent and rectangular obstacle
+#     """
+#     poly = copy(polygon)
+#     i = 1
+#     while i <= length(poly)
+#         npts = length(poly)
+#         seg = get_edge(poly,i)
+#         v = rot(normalize(seg.B - seg.A),π/2)
+#         plane = LineSegment(plane.A+v*circle.r,plane.B+v*circle.r)
+#         idxs = collect(1:length(poly))
+#         idxs = [idxs[mod(i+2,npts):end];idxs[1:mod(i+1,npts)]]
+#         for j in idxs
+#
+#         end
+#         pt_sides = [sign(cross(pt,seg.B-seg.A)) for pt in poly.pts]
+#         valid_idxs = collect(1:length(poly.pts))[pt_sides .<= 0]
+#         new_pt = intersection(plane,get_edge(poly,valid_idxs[1]-1))
+#         prev_side = pt_sides[i]
+#     end
+# # end
 
 ######################################
 
