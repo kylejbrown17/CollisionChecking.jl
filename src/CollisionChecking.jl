@@ -16,7 +16,7 @@ export
     Circle,
     Rectangle,
 
-    has_intersection,
+    # has_intersection,
     check_collision,
     nearest_free_space,
     nearest_in_bounds_space,
@@ -49,109 +49,122 @@ ConvexPolygon(pts::Vector{T} where T <: VecE2) = ConvexPolygon(pts, length(pts))
     r::T = NaN
 end
 @with_kw struct Rectangle{T} <: Shape
-    x1::T = NaN
-    y1::T = NaN
-    x2::T = NaN
-    y2::T = NaN
+    pt1::VecE2{T}
+    pt2::VecE2{T}
 end
 function ConvexPolygon(rect::Rectangle)
     ConvexPolygon([
-        VecE2(min(rect.x1,rect.x2),min(rect.y1,rect.y2)),
-        VecE2(max(rect.x1,rect.x2),min(rect.y1,rect.y2)),
-        VecE2(max(rect.x1,rect.x2),max(rect.y1,rect.y2)),
-        VecE2(min(rect.x1,rect.x2),max(rect.y1,rect.y2)),
+        VecE2(min(rect.pt1.x,rect.pt2.x),min(rect.pt1.y,rect.pt2.y)),
+        VecE2(max(rect.pt1.x,rect.pt2.x),min(rect.pt1.y,rect.pt2.y)),
+        VecE2(max(rect.pt1.x,rect.pt2.x),max(rect.pt1.y,rect.pt2.y)),
+        VecE2(min(rect.pt1.x,rect.pt2.x),max(rect.pt1.y,rect.pt2.y)),
     ])
 end
 function Rectangle(polygon::ConvexPolygon)
     Rectangle(
-        x1=minimum(pt.x for pt in polygon.pts),
-        x2=maximum(pt.x for pt in polygon.pts),
-        y1=minimum(pt.y for pt in polygon.pts),
-        y2=maximum(pt.y for pt in polygon.pts),
+        pt1=VecE2(minimum(pt.x for pt in polygon.pts),minimum(pt.y for pt in polygon.pts)),
+        pt2=VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
     )
 end
 
-function has_intersection(p1::T,p2::T,q1::T,q2::T) where T <: AbstractVector
-    """
-    Returns true if there is an intersection
-    between seg1 and seg2
-    """
-    # L1: (p1) -- (p2)
-    # L2: (q1) -- (q2)
-    A = [Vector(p2-p1) Vector(q1-q2)]
-    b = q1 - p1
-    if rank(A) == 2
-        x = inv(A)*b
-        s = x[1]
-        t = x[2]
-        if (0.0 <= s <= 1.0) && (0.0 <= t <= 1.0)
-            return true # intersection
-        end
-    else
-        # is q1 in p1 -- p2?
-        a = q1-p1
-        b = p2-p1
-        c = dot(a,b) / (norm(b)^2)
-        if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-            return true # colinear overlap
-        end
-        # is q2 in p1 -- p2?
-        a = q2-p1
-        b = p2-p1
-        c = dot(a,b) / (norm(b)^2)
-        if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-            return true # colinear overlap
-        end
-        # is p1 in q1 -- q2?
-        a = p1-q1
-        b = q2-q1
-        c = dot(a,b) / (norm(b)^2)
-        if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-            return true # colinear overlap
-        end
-    end
-    return false
-end
-function has_intersection(seg1::Tuple{T,T},seg2::Tuple{T,T}) where T <: AbstractVector
-    """
-    Returns true if there is an intersection
-    between seg1 and seg2
-    """
-    has_intersection(seg1[1],seg1[2],seg2[1],seg2[2])
-end
-function has_intersection(seg::Tuple{T,T},pts::Vector{S}) where {T <: AbstractVector,S <: AbstractVector}
-    """
-    Returns true if there is an intersection
-    between the line segment and the polygon
-    """
-    p1,p2 = seg
-    for (i,q1) in enumerate(pts)
-        if i < length(pts)
-            q2 = pts[i+1]
-            if has_intersection(p1,p2,q1,q2)
-                return true
-            end
-        else
-            q2 = pts[1]
-            if has_intersection(p1,p2,q1,q2)
-                return true
-            end
-        end
-    end
-    return false
-end
-function has_intersection(pt1::T,pt2::T,objects::Vector{ConvexPolygon}) where T <: AbstractVector
-    """
-    checks to see if there is a clear line of sight between two points through
-    an environment described by a collection of obstacles
-    """
-    for o in objects
-        if has_intersection((pt1,pt2),o.pts)
+function Vec.intersects(seg::LineSegment,poly::ConvexPolygon)
+    for i in 1:length(poly.pts)
+        seg2 = get_edge(poly,i)
+        if intersects(seg,seg2)
             return true
         end
     end
     return false
 end
+function Vec.intersects(seg::LineSegment,objects::Vector{ConvexPolygon})
+    for o in objects
+        if intersects(seg,o)
+            return true
+        end
+    end
+    return false
+end
+# function has_intersection(p1::T,p2::T,q1::T,q2::T) where T <: AbstractVector
+#     """
+#     Returns true if there is an intersection
+#     between seg1 and seg2
+#     """
+#     # L1: (p1) -- (p2)
+#     # L2: (q1) -- (q2)
+#     A = [Vector(p2-p1) Vector(q1-q2)]
+#     b = q1 - p1
+#     if rank(A) == 2
+#         x = inv(A)*b
+#         s = x[1]
+#         t = x[2]
+#         if (0.0 <= s <= 1.0) && (0.0 <= t <= 1.0)
+#             return true # intersection
+#         end
+#     else
+#         # is q1 in p1 -- p2?
+#         a = q1-p1
+#         b = p2-p1
+#         c = dot(a,b) / (norm(b)^2)
+#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
+#             return true # colinear overlap
+#         end
+#         # is q2 in p1 -- p2?
+#         a = q2-p1
+#         b = p2-p1
+#         c = dot(a,b) / (norm(b)^2)
+#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
+#             return true # colinear overlap
+#         end
+#         # is p1 in q1 -- q2?
+#         a = p1-q1
+#         b = q2-q1
+#         c = dot(a,b) / (norm(b)^2)
+#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
+#             return true # colinear overlap
+#         end
+#     end
+#     return false
+# end
+# function has_intersection(seg1::Tuple{T,T},seg2::Tuple{T,T}) where T <: AbstractVector
+#     """
+#     Returns true if there is an intersection
+#     between seg1 and seg2
+#     """
+#     has_intersection(seg1[1],seg1[2],seg2[1],seg2[2])
+# end
+# function has_intersection(seg::Tuple{T,T},pts::Vector{S}) where {T <: AbstractVector,S <: AbstractVector}
+#     """
+#     Returns true if there is an intersection
+#     between the line segment and the polygon
+#     """
+#     p1,p2 = seg
+#     for (i,q1) in enumerate(pts)
+#         if i < length(pts)
+#             q2 = pts[i+1]
+#             if has_intersection(p1,p2,q1,q2)
+#                 return true
+#             end
+#         else
+#             q2 = pts[1]
+#             if has_intersection(p1,p2,q1,q2)
+#                 return true
+#             end
+#         end
+#     end
+#     return false
+# end
+# function has_intersection(pt1::T,pt2::T,objects::Vector{ConvexPolygon}) where T <: AbstractVector
+#     """
+#     checks to see if there is a clear line of sight between two points through
+#     an environment described by a collection of obstacles
+#     """
+#     for o in objects
+#         if has_intersection((pt1,pt2),o.pts)
+#             return true
+#         end
+#     end
+#     return false
+# end
 
 function check_collision(pt::VecE2,polygon::ConvexPolygon)
     n = length(polygon.pts)
@@ -239,8 +252,8 @@ end
 check_collision(polygon::ConvexPolygon,circle::Circle) = check_collision(circle,polygon)
 function check_collision(rect::Rectangle,circle::Circle)
     """ Between a circle and a rectangular obstacle """
-    if (circle.x + circle.r) > min(rect.x1,rect.x2) && (circle.x - circle.r) < max(rect.x1,rect.x2)
-        if (circle.y + circle.r) > min(rect.y1,rect.y2) && (circle.y - circle.r) < max(rect.y1,rect.y2)
+    if (circle.x + circle.r) > min(rect.pt1.x,rect.pt2.x) && (circle.x - circle.r) < max(rect.pt1.x,rect.pt2.x)
+        if (circle.y + circle.r) > min(rect.pt1.y,rect.pt2.y) && (circle.y - circle.r) < max(rect.pt1.y,rect.pt2.y)
             return true
         end
     end
@@ -248,8 +261,8 @@ function check_collision(rect::Rectangle,circle::Circle)
 end
 function check_collision(pt::VecE2,rect::Rectangle)
     """ Between a circle and a rectangular obstacle """
-    if  min(rect.x1,rect.x2) < pt.x < max(rect.x1,rect.x2)
-        if min(rect.y1,rect.y2) < pt.y < max(rect.y1,rect.y2)
+    if  min(rect.pt1.x,rect.pt2.x) < pt.x < max(rect.pt1.x,rect.pt2.x)
+        if min(rect.pt1.y,rect.pt2.y) < pt.y < max(rect.pt1.y,rect.pt2.y)
             return true
         end
     end
@@ -313,8 +326,8 @@ function Base.in(c1::Circle,c2::Circle)
     return norm([c1.x,c1.y]-[c2.x,c2.y]) + c1.r < c2.r
 end
 function Base.in(circle::Circle,rect::Rectangle)
-    if min(rect.x1,rect.x2) + circle.r <= circle.x <= max(rect.x1,rect.x2) - circle.r
-        if min(rect.y1,rect.y2) + circle.r <= circle.y <= max(rect.y1,rect.y2) - circle.r
+    if min(rect.pt1.x,rect.pt2.x) + circle.r <= circle.x <= max(rect.pt1.x,rect.pt2.x) - circle.r
+        if min(rect.pt1.y,rect.pt2.y) + circle.r <= circle.y <= max(rect.pt1.y,rect.pt2.y) - circle.r
             return true
         end
     end
@@ -333,8 +346,8 @@ function nearest_free_space(circle::Circle,rect::Rectangle)
     """
     Δx = 0.0
     Δy = 0.0
-    rcenter = VecE2((rect.x1+rect.x2)/2,(rect.y1+rect.y2)/2)
-    rwidth = VecE2(abs(rect.x2-rect.x1),abs(rect.y2-rect.y1))
+    rcenter = VecE2((rect.pt1.x+rect.pt2.x)/2,(rect.pt1.y+rect.pt2.y)/2)
+    rwidth = VecE2(abs(rect.pt2.x-rect.pt1.x),abs(rect.pt2.y-rect.pt1.y))
     if abs(circle.x - rcenter[1]) <= circle.r+rwidth[1]/2
         if abs(circle.y - rcenter[2]) <= circle.r+rwidth[2]/2
             targetX = rcenter[1]

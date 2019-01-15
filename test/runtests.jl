@@ -109,5 +109,5 @@ p = ConvexPolygon([
     VecE2(-2.0,2.0),
     ])
 sort_pts!(p)
-c = Circle(0.0,0.0,1.0)
-@test get_distance(P,Circle())
+@test get_distance(p,Circle(0.0,0.0,1.0)) == 0.0
+@test round(get_distance(p,Circle(4.0,0.0,1.0)),digits=4) == 1.0
