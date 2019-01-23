@@ -49,8 +49,8 @@ ConvexPolygon(pts::Vector{T} where T <: VecE2) = ConvexPolygon(pts, length(pts))
     r::T = NaN
 end
 @with_kw struct Rectangle{T} <: Shape
-    pt1::VecE2{T}
-    pt2::VecE2{T}
+    pt1::VecE2{T} = VecE2(NaN,NaN)
+    pt2::VecE2{T} = VecE2(NaN,NaN)
 end
 function ConvexPolygon(rect::Rectangle)
     ConvexPolygon([
@@ -84,87 +84,6 @@ function Vec.intersects(seg::LineSegment,objects::Vector{ConvexPolygon})
     end
     return false
 end
-# function has_intersection(p1::T,p2::T,q1::T,q2::T) where T <: AbstractVector
-#     """
-#     Returns true if there is an intersection
-#     between seg1 and seg2
-#     """
-#     # L1: (p1) -- (p2)
-#     # L2: (q1) -- (q2)
-#     A = [Vector(p2-p1) Vector(q1-q2)]
-#     b = q1 - p1
-#     if rank(A) == 2
-#         x = inv(A)*b
-#         s = x[1]
-#         t = x[2]
-#         if (0.0 <= s <= 1.0) && (0.0 <= t <= 1.0)
-#             return true # intersection
-#         end
-#     else
-#         # is q1 in p1 -- p2?
-#         a = q1-p1
-#         b = p2-p1
-#         c = dot(a,b) / (norm(b)^2)
-#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-#             return true # colinear overlap
-#         end
-#         # is q2 in p1 -- p2?
-#         a = q2-p1
-#         b = p2-p1
-#         c = dot(a,b) / (norm(b)^2)
-#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-#             return true # colinear overlap
-#         end
-#         # is p1 in q1 -- q2?
-#         a = p1-q1
-#         b = q2-q1
-#         c = dot(a,b) / (norm(b)^2)
-#         if (0.0 <= c <= 1.0) && (norm(c*b - a) == 0)
-#             return true # colinear overlap
-#         end
-#     end
-#     return false
-# end
-# function has_intersection(seg1::Tuple{T,T},seg2::Tuple{T,T}) where T <: AbstractVector
-#     """
-#     Returns true if there is an intersection
-#     between seg1 and seg2
-#     """
-#     has_intersection(seg1[1],seg1[2],seg2[1],seg2[2])
-# end
-# function has_intersection(seg::Tuple{T,T},pts::Vector{S}) where {T <: AbstractVector,S <: AbstractVector}
-#     """
-#     Returns true if there is an intersection
-#     between the line segment and the polygon
-#     """
-#     p1,p2 = seg
-#     for (i,q1) in enumerate(pts)
-#         if i < length(pts)
-#             q2 = pts[i+1]
-#             if has_intersection(p1,p2,q1,q2)
-#                 return true
-#             end
-#         else
-#             q2 = pts[1]
-#             if has_intersection(p1,p2,q1,q2)
-#                 return true
-#             end
-#         end
-#     end
-#     return false
-# end
-# function has_intersection(pt1::T,pt2::T,objects::Vector{ConvexPolygon}) where T <: AbstractVector
-#     """
-#     checks to see if there is a clear line of sight between two points through
-#     an environment described by a collection of obstacles
-#     """
-#     for o in objects
-#         if has_intersection((pt1,pt2),o.pts)
-#             return true
-#         end
-#     end
-#     return false
-# end
 
 function check_collision(pt::VecE2,polygon::ConvexPolygon)
     n = length(polygon.pts)
