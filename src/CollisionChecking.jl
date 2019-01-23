@@ -327,6 +327,9 @@ function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
     """
         get vector to nearest free space between circular agent and rectangular obstacle
     """
+    if c ∈ p
+        return VecE2(0.0,0.0)
+    end
     Δmin = VecE2(Inf,Inf)
     n = length(polygon.pts)
     for i in 1:n
@@ -486,6 +489,20 @@ function sort_pts!(poly::ConvexPolygon, npts::Int=poly.npts)
     sort!(poly.pts,by=pt->mod(atan(pt-c)+π/2,2π))
     poly
 end
+function remove_colinear_edges(poly::ConvexPolygon)
+   to_remove = Set{Int}()
+   for i in 1:poly.npts
+       j = (i == poly.npts) ? 1 : i+1
+       e1 = get_edge(poly,i)
+       e2 = get_edge(poly,j)
+       if parallel(e1,e2)
+           push!(to_remove,j)
+       end
+   end
+   idxs = setdiff(Set{Int}(collect(1:poly.npts)),to_remove)
+   ConvexPolygon(poly.pts[sort(collect(idxs))])
+end
+
 # function ensure_pts_sorted_by_min_polar_angle!(poly::ConvexPolygon, npts::Int=poly.npts)
 #
 #     @assert(npts ≥ 3)
@@ -623,6 +640,10 @@ end
 function Vec.get_distance(P::ConvexPolygon, C::Circle)
     poly = minkowski_difference!(P, C)
     get_distance(VecE2(0,0), poly)
+end
+
+function seg_intersection(L1::LineSegment,L2::LineSegment)
+    
 end
 
 # function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
