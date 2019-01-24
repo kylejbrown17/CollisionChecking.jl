@@ -16,23 +16,27 @@ export
     Circle,
     Rectangle,
 
-    # has_intersection,
-    check_collision,
-    nearest_free_space,
-    nearest_in_bounds_space,
-
     cyclic_shift_left!,
     cyclic_shift!,
     get_signed_area,
     get_edge,
     get_center,
-    sort_pts!,
-    ensure_pts_sorted_by_min_polar_angle!,
     shift!,
     rotate!,
     mirror!,
+    sort_pts!,
+    remove_colinear_edges,
+
+    check_collision,
+    get_displacement,
+    get_closest_point,
+    seg_intersection,
     minkowski_sum!,
     minkowski_difference!,
+    nearest_free_space,
+    nearest_in_bounds_space,
+
+    # ensure_pts_sorted_by_min_polar_angle!,
     is_colliding,
     get_collision_time
 
@@ -65,6 +69,149 @@ function Rectangle(polygon::ConvexPolygon)
         pt1=VecE2(minimum(pt.x for pt in polygon.pts),minimum(pt.y for pt in polygon.pts)),
         pt2=VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
     )
+end
+
+######################################
+function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(arr))
+    #=
+    Perform a cyclic rotation of the elements in the array, in place
+        d = amount to shift
+        n = length of array (if we only want to work with first n elements)
+    =#
+    for i in 1 : gcd(d, n)
+    # move i-th values of blocks
+        temp = arr[i]
+        j = i
+        while true
+            k = j + d
+            if k > n
+                k = k - n
+            end
+            if k == i
+                break
+            end
+            arr[j] = arr[k]
+            j = k
+        end
+        arr[j] = temp
+    end
+    arr
+end
+function cyclic_shift!(arr::AbstractVector, d::Int)
+    idxs = collect(1:length(arr))
+    i = (d == length(arr)) ? 1 : d + 1
+    idxs = [idxs[i:end];idxs[1:i-1]]
+    arr = arr[idxs]
+end
+######################################
+function get_signed_area(pts::Vector{T} where T <: VecE2, npts::Int=length(pts))
+
+    # https://en.wikipedia.org/wiki/Shoelace_formula
+    # sign of -1 means clockwise, sign of 1 means counterclockwise
+
+    retval = pts[npts].x*pts[1].y - pts[1].x*pts[npts].y
+    for i in 1 : npts-1
+        retval += pts[i].x * pts[i+1].y
+        retval -= pts[i+1].x * pts[i].y
+    end
+
+    retval / 2
+end
+function get_edge(pts::Vector{T} where T <: VecE2, i::Int, npts::Int=length(pts))
+    a = pts[i]
+    b = i+1 ≤ npts ? pts[i+1] : pts[1]
+    LineSegment(a,b)
+end
+######################################
+function Base.iterate(poly::ConvexPolygon, i::Int=1)
+    if i > length(poly)
+        return nothing
+    end
+    return (poly.pts[i], i+1)
+end
+Base.length(poly::ConvexPolygon) = poly.npts
+Base.isempty(poly::ConvexPolygon) = poly.npts == 0
+Base.copy(p::ConvexPolygon) = ConvexPolygon(copy(p.pts))
+get_edge(P::ConvexPolygon, i::Int) = get_edge(P.pts, i, P.npts)
+get_signed_area(poly::ConvexPolygon) = get_signed_area(poly.pts, poly.npts)
+get_center(poly::ConvexPolygon) = sum(poly.pts) / poly.npts
+function shift!(poly::ConvexPolygon, v::VecE2)
+    for i in 1 : length(poly)
+        poly.pts[i] += v
+    end
+    sort_pts!(poly)
+    poly
+end
+function rotate!(poly::ConvexPolygon, θ::Float64)
+    for i in 1 : length(poly)
+        poly.pts[i] = Vec.rot(poly.pts[i], θ)
+    end
+    sort_pts!(poly)
+    poly
+end
+function mirror!(poly::ConvexPolygon)
+    for i in 1 : length(poly)
+        poly.pts[i] = -poly.pts[i]
+    end
+    sort_pts!(poly)
+    poly
+end
+function sort_pts!(poly::ConvexPolygon, npts::Int=poly.npts)
+    """
+    sorts points by polar angle
+    """
+    c = get_center(poly)
+    sort!(poly.pts,by=pt->mod(atan(pt-c)+π/2,2π))
+    poly
+end
+function remove_colinear_edges(poly::ConvexPolygon)
+   to_remove = Set{Int}()
+   for i in 1:poly.npts
+       j = (i == poly.npts) ? 1 : i+1
+       e1 = get_edge(poly,i)
+       e2 = get_edge(poly,j)
+       if parallel(e1,e2)
+           push!(to_remove,j)
+       end
+   end
+   idxs = setdiff(Set{Int}(collect(1:poly.npts)),to_remove)
+   ConvexPolygon(poly.pts[sort(collect(idxs))])
+end
+function Base.empty!(poly::ConvexPolygon)
+    poly.npts = 0
+    poly.pts = Vector{VecE2}()
+    poly
+end
+function Base.copyto!(dest::ConvexPolygon, src::ConvexPolygon)
+    dest.npts = src.npts
+    copyto!(dest.pts, 1, src.pts, 1, src.npts)
+    dest
+end
+function Base.push!(poly::ConvexPolygon, v::VecE2)
+    push!(poly.pts, v)
+    poly.npts = length(poly.pts)
+    poly
+end
+function Base.in(v::VecE2, poly::ConvexPolygon)
+    # DOES include pts on the physical boundary
+    previous_side = 0
+    for i in 1 : length(poly)
+        seg = get_edge(poly, i)
+        affine_segment = seg.B - seg.A
+        affine_point = v - seg.A
+        current_side = sign(cross(affine_point,affine_segment)) # sign indicates side
+        if current_side > 0 # outside
+            return false
+        end
+    end
+    true
+end
+function Base.show(io::IO, poly::ConvexPolygon)
+    @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
+    for i in 1 : length(poly)
+        print(io, "\t"); show(io, poly.pts[i])
+        print(io, "\n")
+    end
 end
 
 function Vec.intersects(seg::LineSegment,poly::ConvexPolygon)
@@ -123,8 +270,6 @@ function check_collision(circle::Circle,polygon::ConvexPolygon)
     return true
 end
 function check_collision(polygon1::ConvexPolygon,polygon2::ConvexPolygon)
-    n1 = length(polygon1.pts)
-    n2 = length(polygon2.pts)
     for pt in polygon1.pts
         if check_collision(pt,polygon2)
             return true
@@ -135,21 +280,11 @@ function check_collision(polygon1::ConvexPolygon,polygon2::ConvexPolygon)
             return true
         end
     end
-    for i in 1:n1
-        pt1 = polygon1.pts[i]
-        if i < n1
-            pt2 = polygon1.pts[i+1]
-        else
-            pt2 = polygon1.pts[1]
-        end
-        for j in 1:n2
-            pt3 = polygon2.pts[j]
-            if j < n2
-                pt4 = polygon2.pts[j+1]
-            else
-                pt4 = polygon2.pts[1]
-            end
-            if has_intersection((pt1,pt2),(pt3,pt4))
+    for i in 1:polygon1.npts
+        e1 = get_edge(polygon1, i)
+        for j in 1:polygon2.npts
+            e2 = get_edge(polygon2,j)
+            if intersects(e1,e2)
                 return true
             end
         end
@@ -259,213 +394,66 @@ function Base.in(rect1::Rectangle,rect2::Rectangle)
     Base.in(ConvexPolygon(rect1),ConvexPolygon(rect2))
 end
 
-function nearest_free_space(circle::Circle,rect::Rectangle)
+function get_closest_point(P::VecE2, seg::LineSegment)
     """
-        get vector to nearest free space between circular agent and rectangular obstacle
+    returns closest point on `seg` to `P`
     """
-    Δx = 0.0
-    Δy = 0.0
-    rcenter = VecE2((rect.pt1.x+rect.pt2.x)/2,(rect.pt1.y+rect.pt2.y)/2)
-    rwidth = VecE2(abs(rect.pt2.x-rect.pt1.x),abs(rect.pt2.y-rect.pt1.y))
-    if abs(circle.x - rcenter[1]) <= circle.r+rwidth[1]/2
-        if abs(circle.y - rcenter[2]) <= circle.r+rwidth[2]/2
-            targetX = rcenter[1]
-            targetY = rcenter[2]
-            if circle.x < rcenter[1]
-                targetX = (rcenter[1]-(rwidth[1]/2+circle.r))
-            else
-                targetX = (rcenter[1]+(rwidth[1]/2+circle.r))
-            end
-            if circle.y < rcenter[2]
-                targetY = (rcenter[2]-(rwidth[2]/2+circle.r))
-            else
-                targetY = (rcenter[2]+(rwidth[2]/2+circle.r))
-            end
-            Δx = targetX - circle.x
-            Δy = targetY - circle.y
-        end
-    end
-    if abs(Δx) < abs(Δy)
-        return VecE2(Δx, 0.0)
-    else
-        return VecE2(0.0, Δy)
-    end
-end
-function nearest_free_space(circle::Circle,polygon::ConvexPolygon)
-    """
-        get vector to nearest free space between circular agent and rectangular obstacle
-    """
-    Δmin = VecE2(Inf,Inf)
-    n = length(polygon.pts)
-    for i in 1:n
-        pt1 = polygon.pts[i]
-        if i < n
-            pt2 = polygon.pts[i+1]
-        else
-            pt2 = polygon.pts[1]
-        end
-        # projection
-        q = VecE2(circle.x,circle.y) - pt1
-        v = (pt2-pt1)/norm(pt2-pt1)
-        b = v*dot(q,v) # footpoint
-        d = sign(cross(q,v)) # direction (outward is positive)
-        dv = q - b
-        # dv = sign(cross([q;0],[v;0])[end])*(q - b) # normal vector pointing outward from polygon face
-        if d > 0 && norm(dv) > circle.r
-            return VecE2(0.0,0.0)
-        else
-            target = circle.r * d*dv/norm(dv)
-            Δ = target - dv
-            if norm(Δ) < norm(Δmin)
-                Δmin = VecE2(Δ)
-            end
-        end
-    end
-    return Δmin
-end
-function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
-    """
-        get vector to nearest free space between circular agent and rectangular obstacle
-    """
-    if c ∈ p
+    ab = seg.B - seg.A
+    pb = P - seg.A
+
+    denom = normsquared(ab)
+    if denom == 0.0
         return VecE2(0.0,0.0)
     end
-    Δmin = VecE2(Inf,Inf)
-    n = length(polygon.pts)
-    for i in 1:n
-        pt1 = polygon.pts[i]
-        if i < n
-            pt2 = polygon.pts[i+1]
-        else
-            pt2 = polygon.pts[1]
-        end
-        # projection
-        q = VecE2(circle.x,circle.y) - pt1
-        v = (pt2-pt1)/norm(pt2-pt1)
-        b = v*dot(q,v) # footpoint
-        d = sign(cross(q,v)) # direction (outward is positive)
-        dv = q - b
-        if d < 0 && norm(dv) > circle.r
-            return VecE2(0.0,0.0)
-        else
-            target = circle.r * -d*dv/norm(dv) # pointing inside
-            Δ = target - dv
-            if norm(Δ) < norm(Δmin)
-                Δmin = VecE2(Δ)
+
+    r = (ab⋅pb)/denom
+
+    if r ≤ 0.0
+        return seg.A
+    elseif r ≥ 1.0
+        return seg.B
+    else
+        return (seg.A + r*ab)
+    end
+end
+function get_displacement(P::VecE2, seg::LineSegment)
+    """
+    returns vector from `P` to the closest point on `seg`
+    """
+    return get_closest_point(P,seg) - P
+end
+function get_displacement(P::VecE2, poly::ConvexPolygon;solid::Bool=true)
+    if solid && P ∈ poly
+        return Vec(0.0,0.0)
+    else
+        Δmin = Inf
+        Δv = VecE2(NaN,NaN)
+        for i in 1:poly.npts
+            seg = get_edge(poly,i)
+            v = get_displacement(P,seg)
+            if norm(v) < Δmin
+                Δv = v
+                Δmin = norm(v)
             end
         end
-    end
-    return Δmin
-end
-
-######################################
-
-function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(arr))
-    #=
-    Perform a cyclic rotation of the elements in the array, in place
-        d = amount to shift
-        n = length of array (if we only want to work with first n elements)
-    =#
-    for i in 1 : gcd(d, n)
-    # move i-th values of blocks
-
-        temp = arr[i]
-        j = i
-        while true
-            k = j + d
-            if k > n
-                k = k - n
-            end
-            if k == i
-                break
-            end
-            arr[j] = arr[k]
-            j = k
-        end
-        arr[j] = temp
-    end
-    arr
-end
-function cyclic_shift!(arr::AbstractVector, d::Int)
-    idxs = collect(1:length(arr))
-    i = (d == length(arr)) ? 1 : d + 1
-    idxs = [idxs[i:end];idxs[1:i-1]]
-    arr = arr[idxs]
-end
-
-######################################
-
-function get_signed_area(pts::Vector{T} where T <: VecE2, npts::Int=length(pts))
-
-    # https://en.wikipedia.org/wiki/Shoelace_formula
-    # sign of -1 means clockwise, sign of 1 means counterclockwise
-
-    retval = pts[npts].x*pts[1].y - pts[1].x*pts[npts].y
-    for i in 1 : npts-1
-        retval += pts[i].x * pts[i+1].y
-        retval -= pts[i+1].x * pts[i].y
-    end
-
-    retval / 2
-end
-function get_edge(pts::Vector{T} where T <: VecE2, i::Int, npts::Int=length(pts))
-    a = pts[i]
-    b = i+1 ≤ npts ? pts[i+1] : pts[1]
-    LineSegment(a,b)
-end
-
-######################################
-
-function Base.iterate(poly::ConvexPolygon, i::Int=1)
-    if i > length(poly)
-        return nothing
-    end
-    return (poly.pts[i], i+1)
-end
-
-Base.length(poly::ConvexPolygon) = poly.npts
-Base.isempty(poly::ConvexPolygon) = poly.npts == 0
-Base.copy(p::ConvexPolygon) = ConvexPolygon(copy(p.pts))
-get_edge(P::ConvexPolygon, i::Int) = get_edge(P.pts, i, P.npts)
-get_signed_area(poly::ConvexPolygon) = get_signed_area(poly.pts, poly.npts)
-function Base.empty!(poly::ConvexPolygon)
-    poly.npts = 0
-    poly
-end
-function Base.copyto!(dest::ConvexPolygon, src::ConvexPolygon)
-    dest.npts = src.npts
-    copyto!(dest.pts, 1, src.pts, 1, src.npts)
-    dest
-end
-function Base.push!(poly::ConvexPolygon, v::VecE2)
-    push!(poly.pts, v)
-    poly.npts = length(poly.pts)
-    poly
-end
-function Base.in(v::VecE2, poly::ConvexPolygon)
-    # DOES include pts on the physical boundary
-    previous_side = 0
-    for i in 1 : length(poly)
-        seg = get_edge(poly, i)
-        affine_segment = seg.B - seg.A
-        affine_point = v - seg.A
-        current_side = sign(cross(affine_point,affine_segment)) # sign indicates side
-        if current_side > 0 # outside
-            return false
-        end
-    end
-    true
-end
-# Base.in(v::VecSE2{Float64}, poly::ConvexPolygon) = in(convert(VecE2, v), poly)
-function Base.show(io::IO, poly::ConvexPolygon)
-    @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
-    for i in 1 : length(poly)
-        print(io, "\t"); show(io, poly.pts[i])
-        print(io, "\n")
+        return Δv
     end
 end
+function get_displacement(P::VecE2, circle::Circle;solid::Bool=true)
+    if P ∈ circle
+        return VecE2(0.0,0.0)
+    else
+        c = VecE2(circle.x,circle.y) - P
+        return c * (1.0 - circle.r/norm(c))
+    end
+end
+function get_displacement(c1::Circle, c2::Circle;solid::Bool=true)
+    get_displacement(VecE2(c1.x,c1.y),Circle(c2.x,c2.y,c1.r+c2.r))
+end
+function get_displacement(poly::ConvexPolygon,P::VecE2;solid::Bool=true)
+    return -get_displacement(P,poly)
+end
 
-get_center(poly::ConvexPolygon) = sum(poly.pts) / poly.npts
 function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
     if solid && in(v, poly)
         0.0
@@ -481,26 +469,16 @@ end
 function Vec.get_distance(v::VecE2, poly::ConvexPolygon; solid::Bool=true)
     get_distance(poly,v;solid=solid)
 end
-function sort_pts!(poly::ConvexPolygon, npts::Int=poly.npts)
-    """
-    sorts points by polar angle
-    """
-    c = get_center(poly)
-    sort!(poly.pts,by=pt->mod(atan(pt-c)+π/2,2π))
-    poly
-end
-function remove_colinear_edges(poly::ConvexPolygon)
-   to_remove = Set{Int}()
-   for i in 1:poly.npts
-       j = (i == poly.npts) ? 1 : i+1
-       e1 = get_edge(poly,i)
-       e2 = get_edge(poly,j)
-       if parallel(e1,e2)
-           push!(to_remove,j)
-       end
-   end
-   idxs = setdiff(Set{Int}(collect(1:poly.npts)),to_remove)
-   ConvexPolygon(poly.pts[sort(collect(idxs))])
+function seg_intersection(L1::LineSegment,L2::LineSegment)
+    A = [Vector(L1.B-L1.A) Vector(L2.A-L2.B)]
+    b = L2.A - L1.A
+    if rank(A) == 2
+        # (0 < x[1] < 1) => intersection occurs within L1
+        # (0 < x[2] < 1) => intersection occurs within L2
+        x = inv(A)*b
+        return x
+    end
+    return [NaN,NaN]
 end
 
 # function ensure_pts_sorted_by_min_polar_angle!(poly::ConvexPolygon, npts::Int=poly.npts)
@@ -527,27 +505,7 @@ end
 #     end
 #     poly
 # end
-function shift!(poly::ConvexPolygon, v::VecE2)
-    for i in 1 : length(poly)
-        poly.pts[i] += v
-    end
-    sort_pts!(poly)
-    poly
-end
-function rotate!(poly::ConvexPolygon, θ::Float64)
-    for i in 1 : length(poly)
-        poly.pts[i] = Vec.rot(poly.pts[i], θ)
-    end
-    sort_pts!(poly)
-    poly
-end
-function mirror!(poly::ConvexPolygon)
-    for i in 1 : length(poly)
-        poly.pts[i] = -poly.pts[i]
-    end
-    sort_pts!(poly)
-    poly
-end
+
 
 function minkowski_sum!(P::ConvexPolygon, Q::ConvexPolygon, retval::ConvexPolygon=ConvexPolygon())
     #=
@@ -628,6 +586,159 @@ end
 function minkowski_difference!(P::ConvexPolygon, Q::Circle, retval::ConvexPolygon=ConvexPolygon())
     minkowski_sum!(P,Q)
 end
+function offset_polygon(p::ConvexPolygon,d_offset)
+    p_edges = [get_edge(p,i) for i in 1:p.npts]
+    n_edges = []
+    for e in p_edges
+        v = rot((e.B-e.A) / norm(e.B-e.A), -π/2.0)
+        push!(n_edges,e+(v*d_offset))
+    end
+    pts = Vector{VecE2}()
+    if d_offset < 0.0
+        left_neighbors = [-1 for e in n_edges]
+        right_neighbors = [-1 for e in n_edges]
+        left_dists = [0.0 for e in n_edges]
+        right_dists = [1.0 for e in n_edges]
+        for (i,e1) in enumerate(n_edges)
+            # for (j,e2) in enumerate(n_edges)
+            for j in cyclic_shift!(collect(1:length(n_edges)),i)
+                e2 = n_edges[j]
+                if i != j
+                    # θ = mod(atan(rot(e2.B-e2.A,-atan(e1.B-e1.A))),2π)
+                    θ = mod(mod(atan(e2.B-e2.A),2π) - mod(atan(e1.B-e1.A),2π),2π)
+                    if θ < π
+                        x = seg_intersection(e1,e2)
+                        if !any(isnan,x)
+                            if (x[1] < right_dists[i]) && (θ <= π) # (x[2] < 1.0)
+                                right_dists[i] = x[1]
+                                right_neighbors[i] = j
+                            end
+                            if (x[2] > left_dists[j]) && (θ <= π) # (x[1] >= 1.0)
+                                left_dists[j] = x[2]
+                                left_neighbors[j] = i
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        idxs = [i for i in 1:length(n_edges) if left_dists[i] < right_dists[i]]
+        for j in idxs
+            e = n_edges[j]
+            push!(pts,e.A+(e.B-e.A)*right_dists[j])
+        end
+        return ConvexPolygon(pts)
+    else
+        for (i,e1) in enumerate(n_edges)
+            j = (i == length(p_edges)) ? 1 : i+1
+            e2 = n_edges[j]
+            x = seg_intersection(e1,e2)
+            push!(pts,e1.A+(e1.B-e1.A)*x[1])
+        end
+        return ConvexPolygon(pts)
+    end
+end
+
+function nearest_free_space(circle::Circle,rect::Rectangle)
+    """
+        get vector to nearest free space between circular agent and rectangular obstacle
+    """
+    Δx = 0.0
+    Δy = 0.0
+    rcenter = VecE2((rect.pt1.x+rect.pt2.x)/2,(rect.pt1.y+rect.pt2.y)/2)
+    rwidth = VecE2(abs(rect.pt2.x-rect.pt1.x),abs(rect.pt2.y-rect.pt1.y))
+    if abs(circle.x - rcenter[1]) <= circle.r+rwidth[1]/2
+        if abs(circle.y - rcenter[2]) <= circle.r+rwidth[2]/2
+            targetX = rcenter[1]
+            targetY = rcenter[2]
+            if circle.x < rcenter[1]
+                targetX = (rcenter[1]-(rwidth[1]/2+circle.r))
+            else
+                targetX = (rcenter[1]+(rwidth[1]/2+circle.r))
+            end
+            if circle.y < rcenter[2]
+                targetY = (rcenter[2]-(rwidth[2]/2+circle.r))
+            else
+                targetY = (rcenter[2]+(rwidth[2]/2+circle.r))
+            end
+            Δx = targetX - circle.x
+            Δy = targetY - circle.y
+        end
+    end
+    if abs(Δx) < abs(Δy)
+        return VecE2(Δx, 0.0)
+    else
+        return VecE2(0.0, Δy)
+    end
+end
+function nearest_free_space(circle::Circle,polygon::ConvexPolygon)
+    """
+        get vector to nearest free space between circular agent and rectangular obstacle
+    """
+    Δmin = VecE2(Inf,Inf)
+    n = length(polygon.pts)
+    for i in 1:n
+        pt1 = polygon.pts[i]
+        if i < n
+            pt2 = polygon.pts[i+1]
+        else
+            pt2 = polygon.pts[1]
+        end
+        # projection
+        q = VecE2(circle.x,circle.y) - pt1
+        v = (pt2-pt1)/norm(pt2-pt1)
+        b = v*dot(q,v) # footpoint
+        d = sign(cross(q,v)) # direction (outward is positive)
+        dv = q - b
+        # dv = sign(cross([q;0],[v;0])[end])*(q - b) # normal vector pointing outward from polygon face
+        if d > 0 && norm(dv) > circle.r
+            return VecE2(0.0,0.0)
+        else
+            target = circle.r * d*dv/norm(dv)
+            Δ = target - dv
+            if norm(Δ) < norm(Δmin)
+                Δmin = VecE2(Δ)
+            end
+        end
+    end
+    return Δmin
+end
+function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
+    """
+        get vector to nearest free space between circular agent and rectangular obstacle
+    """
+    p = offset_polygon(polygon,-circle.r)
+    get_displacement(VecE2(circle.x,circle.y),p)
+    # if c ∈ p
+    #     return VecE2(0.0,0.0)
+    # end
+    # Δmin = VecE2(Inf,Inf)
+    # n = length(polygon.pts)
+    # for i in 1:n
+    #     pt1 = polygon.pts[i]
+    #     if i < n
+    #         pt2 = polygon.pts[i+1]
+    #     else
+    #         pt2 = polygon.pts[1]
+    #     end
+    #     # projection
+    #     q = VecE2(circle.x,circle.y) - pt1
+    #     v = (pt2-pt1)/norm(pt2-pt1)
+    #     b = v*dot(q,v) # footpoint
+    #     d = sign(cross(q,v)) # direction (outward is positive)
+    #     dv = q - b
+    #     if d < 0 && norm(dv) > circle.r
+    #         return VecE2(0.0,0.0)
+    #     else
+    #         target = circle.r * -d*dv/norm(dv) # pointing inside
+    #         Δ = target - dv
+    #         if norm(Δ) < norm(Δmin)
+    #             Δmin = VecE2(Δ)
+    #         end
+    #     end
+    # end
+    # return Δmin
+end
 
 function is_colliding(P::ConvexPolygon, Q::ConvexPolygon)
     poly = minkowski_difference!(P, Q)
@@ -642,32 +753,6 @@ function Vec.get_distance(P::ConvexPolygon, C::Circle)
     get_distance(VecE2(0,0), poly)
 end
 
-function seg_intersection(L1::LineSegment,L2::LineSegment)
-    
-end
-
-# function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
-#     """
-#         get vector to nearest free space between circular agent and rectangular obstacle
-#     """
-#     poly = copy(polygon)
-#     i = 1
-#     while i <= length(poly)
-#         npts = length(poly)
-#         seg = get_edge(poly,i)
-#         v = rot(normalize(seg.B - seg.A),π/2)
-#         plane = LineSegment(plane.A+v*circle.r,plane.B+v*circle.r)
-#         idxs = collect(1:length(poly))
-#         idxs = [idxs[mod(i+2,npts):end];idxs[1:mod(i+1,npts)]]
-#         for j in idxs
-#
-#         end
-#         pt_sides = [sign(cross(pt,seg.B-seg.A)) for pt in poly.pts]
-#         valid_idxs = collect(1:length(poly.pts))[pt_sides .<= 0]
-#         new_pt = intersection(plane,get_edge(poly,valid_idxs[1]-1))
-#         prev_side = pt_sides[i]
-#     end
-# # end
 
 ######################################
 

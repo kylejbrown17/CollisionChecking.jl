@@ -111,3 +111,5 @@ p = ConvexPolygon([
 sort_pts!(p)
 @test get_distance(p,Circle(0.0,0.0,1.0)) == 0.0
 @test round(get_distance(p,Circle(4.0,0.0,1.0)),digits=4) == 1.0
+
+@test norm(nearest_in_bounds_space(Circle(4.0,0.0,1.0),p) - VecE2(-3.0,0.0)) < 0.000001
