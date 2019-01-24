@@ -84,63 +84,73 @@ function offset_polygon(p::ConvexPolygon,d_offset)
 end
 
 function plot_polygon!(plt,p::ConvexPolygon)
-    x = [v.x for v in p.pts]
-    push!(x,p.pts[1].x)
-    y = [v.y for v in p.pts]
-    push!(y,p.pts[1].y)
-    plot!(plt,x,y)
+    if length(p.pts) > 0
+        x = [v.x for v in p.pts]
+        push!(x,p.pts[1].x)
+        y = [v.y for v in p.pts]
+        push!(y,p.pts[1].y)
+        plot!(plt,x,y)
+    end
 end
 
-
-function offset_polygon2(p::ConvexPolygon,d_offset)
+function offset_polygon2(plt,p::ConvexPolygon,d_offset)
     p_edges = [get_edge(p,i) for i in 1:p.npts]
     n_edges = []
-    x = []
-    y = []
+    # x = []
+    # y = []
     for e in p_edges
         v = rot((e.B-e.A) / norm(e.B-e.A), -π/2.0)
-        e2 = e+(v*d_offset)
-        # plot!(plt,[e2.A.x,e2.B.x],[e2.A.y,e2.B.y])
         push!(n_edges,e+(v*d_offset))
-        push!(x,e2.A.x)
-        push!(x,e2.B.x)
-        push!(y,e2.A.y)
-        push!(y,e2.B.y)
+        # e2 = e+(v*d_offset)
+        # plot!(plt,[e2.A.x,e2.B.x],[e2.A.y,e2.B.y])
+        # push!(x,e2.A.x)
+        # push!(x,e2.B.x)
+        # push!(y,e2.A.y)
+        # push!(y,e2.B.y)
     end
-    plot!(plt,x,y)
+    # plot!(plt,x,y)
 
     left_neighbors = [-1 for e in n_edges]
     right_neighbors = [-1 for e in n_edges]
-    left_dists = [-Inf for e in n_edges]
-    right_dists = [Inf for e in n_edges]
+    left_dists = [0.0 for e in n_edges]
+    right_dists = [1.0 for e in n_edges]
     for (i,e1) in enumerate(n_edges)
         for j in cyclic_shift!(collect(1:length(n_edges)),i)
             e2 = n_edges[j]
         # for (j,e2) in enumerate(n_edges)
             if i != j
-                @show θ = mod(atan(rot(e2.B-e2.A,-atan(e1.B-e1.A))),2π)
+                θ = mod(atan(rot(e2.B-e2.A,-atan(e1.B-e1.A))),2π)
                 # if θ < π
                     # θ = mod(mod(atan(e2.B-e2.A),2π) - mod(atan(e1.B-e1.A),2π),2π)
                     x = seg_intersection(e1,e2)
-                    if (x[1] < right_dists[i]) && (θ <= π)
-                        right_dists[i] = x[1]
-                        right_neighbors[i] = j
-                    end
-                    if (x[2] > left_dists[j]) && θ <= π #(x[1] >= 1.0)
-                        left_dists[j] = x[2]
-                        left_neighbors[j] = i
+                    if !any(isnan,x)
+                        if (x[1] < right_dists[i]) && (θ <= π) # (x[2] < 1.0)
+                            right_dists[i] = x[1]
+                            right_neighbors[i] = j
+                        end
+                        if (x[2] > left_dists[j]) && (θ <= π) # (x[1] >= 1.0)
+                            left_dists[j] = x[2]
+                            left_neighbors[j] = i
+                        end
                     end
                 # end
             end
         end
     end
-    idxs = sort(collect(setdiff(union(left_neighbors,right_neighbors),Set(-1))))
+    @show left_dists
+    @show right_dists
+    # idxs = sort(collect(setdiff(union(left_neighbors,right_neighbors),Set(-1))))
+    idxs = [i for i in 1:length(n_edges) if left_dists[i] < right_dists[i]]
     pts = Vector{VecE2}()
     for j in idxs
         e = n_edges[j]
         push!(pts,e.A+(e.B-e.A)*right_dists[j])
     end
     pr = ConvexPolygon(pts)
+    # Why are we getting NaN in pts?
+    
+    # plot_polygon!(plt,pr)
+    return (pr, plt)
 end
 
 # function offset_polygon3(p::ConvexPolygon,d_offset)
@@ -318,20 +328,20 @@ end
 # end
 
 # hexagon
-r = 1.0
-α = collect(range(0,stop=2π,length=7))[1:end-1]
-p = ConvexPolygon([VecE2(r*cos(a),r*sin(a)) for a in α])
-sort_pts!(p)
-# irregular hexagon
 # r = 1.0
-# α = collect(range(0,stop=2π,length=20))[1:end-1]
-# p = ConvexPolygon([VecE2(r*cos(a),r*sin(a)) for a in rand(α,6)])
+# α = collect(range(0,stop=2π,length=7))[1:end-1]
+# p = ConvexPolygon([VecE2(r*cos(a),r*sin(a)) for a in α])
 # sort_pts!(p)
+# irregular hexagon
+r = 1.0
+α = collect(range(0,stop=2π,length=20))[1:end-1]
+p = ConvexPolygon([VecE2(r*cos(a),r*sin(a)) for a in rand(α,6)])
+sort_pts!(p)
 d_offset = -0.5
-pr = offset_polygon2(p,d_offset)
-
-
+# pr = offset_polygon2(p,d_offset)
 plt = plot(aspect_ratio=:equal)
 plot_polygon!(plt,p)
-
+(pr,plt) = offset_polygon2(plt,p,d_offset)
+sort_pts!(pr)
+# plot!(plt)
 plot_polygon!(plt,pr)
