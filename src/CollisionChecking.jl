@@ -36,7 +36,6 @@ export
     nearest_free_space,
     nearest_in_bounds_space,
 
-    # ensure_pts_sorted_by_min_polar_angle!,
     is_colliding,
     get_collision_time
 
@@ -66,8 +65,8 @@ function ConvexPolygon(rect::Rectangle)
 end
 function Rectangle(polygon::ConvexPolygon)
     Rectangle(
-        pt1=VecE2(minimum(pt.x for pt in polygon.pts),minimum(pt.y for pt in polygon.pts)),
-        pt2=VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
+        VecE2(minimum(pt.x for pt in polygon.pts),minimum(pt.y for pt in polygon.pts)),
+        VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
     )
 end
 
@@ -244,7 +243,7 @@ function check_collision(pt::VecE2,polygon::ConvexPolygon)
         q = pt - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         d = sign(cross([q;0],[v;0])[end])
-        if d > 0.0
+        if d >= 0.0
             return false
         end
     end
@@ -263,7 +262,7 @@ function check_collision(circle::Circle,polygon::ConvexPolygon)
         q = VecE2(circle.x,circle.y) - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         d = sign(cross([q;0],[v;0])[end])*norm(q - v*dot(q,v))
-        if d > circle.r
+        if d >= circle.r
             return false
         end
     end
@@ -738,6 +737,9 @@ function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
     #     end
     # end
     # return Δmin
+end
+function nearest_in_bounds_space(circle::Circle,rect::Rectangle)
+    nearest_in_bounds_space(circle, ConvexPolygon(rect))
 end
 
 function is_colliding(P::ConvexPolygon, Q::ConvexPolygon)
