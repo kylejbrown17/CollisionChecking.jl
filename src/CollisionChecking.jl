@@ -453,6 +453,9 @@ function get_displacement(poly::ConvexPolygon,P::VecE2;solid::Bool=true)
     return -get_displacement(P,poly)
 end
 
+function Vec.get_distance(v1::T where T <: Union{VecE,VecSE}, v2::S where S <: Union{VecE,VecSE})
+    norm(VecE2(v2.x-v1.x,v2.y-v1.y))
+end
 function Vec.get_distance(poly::ConvexPolygon, v::VecE2; solid::Bool=true)
     if solid && in(v, poly)
         0.0
