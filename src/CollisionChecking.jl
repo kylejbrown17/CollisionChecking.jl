@@ -51,6 +51,7 @@ ConvexPolygon(pts::Vector{T} where T <: VecE2) = ConvexPolygon(pts, length(pts))
     y::T = NaN
     r::T = NaN
 end
+Circle(c::VecE2,r) = Circle(c.x,c.y,r)
 @with_kw struct Rectangle{T} <: Shape
     pt1::VecE2{T} = VecE2(NaN,NaN)
     pt2::VecE2{T} = VecE2(NaN,NaN)
@@ -69,6 +70,8 @@ function Rectangle(polygon::ConvexPolygon)
         VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
     )
 end
+# Rectangle(rect::Rectangle) = Rectangle(rect.pt1,rect.pt2)
+ConvexPolygon(poly::ConvexPolygon) = ConvexPolygon(poly.pts)
 
 ######################################
 function cyclic_shift_left!(arr::AbstractVector, d::Int, n::Int=length(arr))
@@ -230,6 +233,8 @@ function Vec.intersects(seg::LineSegment,objects::Vector{ConvexPolygon})
     end
     return false
 end
+Vec.intersects(v1::VecE2,v2::VecE2,shape) = Vec.intersects(LineSegment(v1,v2),shape)
+
 
 function check_collision(pt::VecE2,polygon::ConvexPolygon)
     n = length(polygon.pts)
@@ -325,6 +330,14 @@ check_collision(circle::Circle,rect::Rectangle) = check_collision(rect,circle)
 function check_collision(rect1::Rectangle,rect2::Rectangle)
     if max(rect1.x1,rect1.x2) > min(rect2.x1,rect2.x2) && min(rect1.x1,rect1.x2) < max(rect2.x1,rect2.x2)
         if max(rect1.y1,rect1.y2) > min(rect2.y1,rect2.y2) && min(rect1.y1,rect1.y2) < max(rect2.y1,rect2.y2)
+            return true
+        end
+    end
+    return false
+end
+function check_collision(shape1::T where {T<:Union{Shape,VecE2}},shapes::Vector{S} where {S<:Shape})
+    for s in shapes
+        if check_collision(shape1,s)
             return true
         end
     end
