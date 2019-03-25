@@ -15,6 +15,8 @@ export
     ConvexPolygon,
     Circle,
     Rectangle,
+    get_width,
+    get_height,
 
     cyclic_shift_left!,
     cyclic_shift!,
@@ -27,12 +29,14 @@ export
     sort_pts!,
     remove_colinear_edges,
 
+    penetration,
     check_collision,
     get_displacement,
     get_closest_point,
     seg_intersection,
     minkowski_sum!,
     minkowski_difference!,
+    offset_polygon,
     nearest_free_space,
     nearest_in_bounds_space,
 
@@ -70,6 +74,17 @@ function Rectangle(polygon::ConvexPolygon)
         VecE2(maximum(pt.x for pt in polygon.pts),maximum(pt.y for pt in polygon.pts))
     )
 end
+function Rectangle(circle::Circle)
+    Rectangle(
+        VecE2(circle.x - circle.r,circle.x + circle.r),
+        VecE2(circle.y - circle.r,circle.y + circle.r)
+    )
+end
+
+get_width(rect::Rectangle) = rect.pt2.x - rect.pt1.x
+get_height(rect::Rectangle) = rect.pt2.y - rect.pt1.y
+get_width(shape::Union{Circle,ConvexPolygon}) = get_width(Rectangle(shape))
+get_height(shape::Union{Circle,ConvexPolygon}) = get_height(Rectangle(shape))
 # Rectangle(rect::Rectangle) = Rectangle(rect.pt1,rect.pt2)
 ConvexPolygon(poly::ConvexPolygon) = ConvexPolygon(poly.pts)
 
@@ -208,6 +223,15 @@ function Base.in(v::VecE2, poly::ConvexPolygon)
     end
     true
 end
+function Base.in(v::VecE2, polygons::Vector{ConvexPolygon})
+    for p in polygons
+        if v in p
+            return true
+        end
+    end
+    return false
+end
+
 function Base.show(io::IO, poly::ConvexPolygon)
     @printf(io, "ConvexPolygon: len %d (max %d pts)\n", length(poly), length(poly.pts))
     for i in 1 : length(poly)
@@ -235,7 +259,50 @@ function Vec.intersects(seg::LineSegment,objects::Vector{ConvexPolygon})
 end
 Vec.intersects(v1::VecE2,v2::VecE2,shape) = Vec.intersects(LineSegment(v1,v2),shape)
 
+function penetration(v::VecE2,polygon::ConvexPolygon)
+    previous_side = 0
+    d_max = Inf
+    for i in 1 : length(polygon)
+        seg = get_edge(polygon, i)
+        affine_segment = seg.B - seg.A
+        affine_point = v - seg.A
+        current_side = sign(cross(affine_point,affine_segment)) # sign indicates side
+        if current_side > 0 # outside
+            return 0.0
+        else
+            d_max = min(get_distance(seg, v),d_max)
+        end
+    end
+    return d_max
 
+    # n = length(polygon.pts)
+    # d_max = -Inf
+    # for i in 1:n
+    #     pt1 = polygon.pts[i]
+    #     if i < n
+    #         pt2 = polygon.pts[i+1]
+    #     else
+    #         pt2 = polygon.pts[1]
+    #     end
+    #     q = pt - pt1
+    #     v = (pt2-pt1)/norm(pt2-pt1)
+    #     d = sign(cross([q;0],[v;0])[end])
+    #     if d > 0.0 # Changed this from >= 0.0. Not sure if it will cause major trouble...
+    #         return 0.0
+    #     else
+    #         d_max = max(-get_distance(seg, v),d_max)
+    #     end
+    # end
+    # return -d_max
+end
+function penetration(pt::VecE2,polygons::Vector{ConvexPolygon})
+    for p in polygons
+        if pt in p
+            return penetration(pt,p)
+        end
+    end
+    return 0.0
+end
 function check_collision(pt::VecE2,polygon::ConvexPolygon)
     n = length(polygon.pts)
     for i in 1:n
@@ -248,7 +315,7 @@ function check_collision(pt::VecE2,polygon::ConvexPolygon)
         q = pt - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         d = sign(cross([q;0],[v;0])[end])
-        if d >= 0.0
+        if d > 0.0 # Changed this from >= 0.0. Not sure if it will cause major trouble...
             return false
         end
     end
@@ -436,7 +503,7 @@ function get_displacement(P::VecE2, seg::LineSegment)
 end
 function get_displacement(P::VecE2, poly::ConvexPolygon;solid::Bool=true)
     if solid && P ∈ poly
-        return Vec(0.0,0.0)
+        return VecE2(0.0,0.0)
     else
         Δmin = Inf
         Δv = VecE2(NaN,NaN)
