@@ -51,11 +51,13 @@ end
 ConvexPolygon(npts::Int) = ConvexPolygon(Array{VecE2}(undef, npts), 0)
 ConvexPolygon(pts::Vector{T} where T <: VecE2) = ConvexPolygon(pts, length(pts))
 @with_kw struct Circle{T} <: Shape
-    x::T = NaN
-    y::T = NaN
-    r::T = NaN
+    c::VecE2{T} = VecE2(NaN,NaN)
+    r::T        = NaN
 end
-Circle(c::VecE2,r) = Circle(c.x,c.y,r)
+# Circle(c::VecE2,r) = Circle(c.x,c.y,r)
+Circle(x,y,r) = Circle(VecE2(x,y),r)
+# get_center(c::Circle) = VecE2(c.x,c.y)
+get_center(c::Circle) = c.c
 @with_kw struct Rectangle{T} <: Shape
     pt1::VecE2{T} = VecE2(NaN,NaN)
     pt2::VecE2{T} = VecE2(NaN,NaN)
@@ -76,8 +78,8 @@ function Rectangle(polygon::ConvexPolygon)
 end
 function Rectangle(circle::Circle)
     Rectangle(
-        VecE2(circle.x - circle.r,circle.x + circle.r),
-        VecE2(circle.y - circle.r,circle.y + circle.r)
+        VecE2(get_center(circle).x - circle.r,get_center(circle).x + circle.r),
+        VecE2(get_center(circle).y - circle.r,get_center(circle).y + circle.r)
     )
 end
 
@@ -249,7 +251,7 @@ function Vec.intersects(seg::LineSegment,poly::ConvexPolygon)
     end
     return false
 end
-function Vec.intersects(seg::LineSegment,objects::Vector{P} where {P <: ConvexPolygon}) 
+function Vec.intersects(seg::LineSegment,objects::Vector{P} where {P <: ConvexPolygon})
     for o in objects
         if intersects(seg,o)
             return true
@@ -331,7 +333,7 @@ function check_collision(circle::Circle,polygon::ConvexPolygon)
         else
             pt2 = polygon.pts[1]
         end
-        q = VecE2(circle.x,circle.y) - pt1
+        q = get_center(circle) - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         d = sign(cross([q;0],[v;0])[end])*norm(q - v*dot(q,v))
         if d >= circle.r
@@ -364,11 +366,11 @@ function check_collision(polygon1::ConvexPolygon,polygon2::ConvexPolygon)
 end
 check_collision(rect::Rectangle,polygon::ConvexPolygon) = check_collision(ConvexPolygon(rect),polygon)
 function check_collision(pt::VecE2,circle::Circle)
-    norm(VecE2(circle.x,circle.y)-pt) < circle.r
+    norm(get_center(circle)-pt) < circle.r
 end
 function check_collision(circle1::Circle,circle2::Circle)
     """ Between two circles """
-    if norm([circle1.x-circle2.x;circle1.y-circle2.y]) < (circle1.r + circle2.r)/2.0
+    if norm(get_center(circle1)-get_center(circle2)) < (circle1.r + circle2.r)/2.0
         return true
     else
         return false
@@ -377,8 +379,8 @@ end
 check_collision(polygon::ConvexPolygon,circle::Circle) = check_collision(circle,polygon)
 function check_collision(rect::Rectangle,circle::Circle)
     """ Between a circle and a rectangular obstacle """
-    if (circle.x + circle.r) > min(rect.pt1.x,rect.pt2.x) && (circle.x - circle.r) < max(rect.pt1.x,rect.pt2.x)
-        if (circle.y + circle.r) > min(rect.pt1.y,rect.pt2.y) && (circle.y - circle.r) < max(rect.pt1.y,rect.pt2.y)
+    if (get_center(circle).x + circle.r) > min(rect.pt1.x,rect.pt2.x) && (get_center(circle).x - circle.r) < max(rect.pt1.x,rect.pt2.x)
+        if (get_center(circle).y + circle.r) > min(rect.pt1.y,rect.pt2.y) && (get_center(circle).y - circle.r) < max(rect.pt1.y,rect.pt2.y)
             return true
         end
     end
@@ -423,7 +425,7 @@ function Base.in(circle::Circle,polygon::ConvexPolygon)
         else
             pt2 = polygon.pts[1]
         end
-        q = VecE2(circle.x,circle.y) - pt1
+        q = get_center(circle) - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         d = sign(cross([q;0],[v;0])[end])*norm(q - v*dot(q,v))
         if d > -circle.r
@@ -444,7 +446,7 @@ function Base.in(rect::Rectangle,polygon::ConvexPolygon)
     Base.in(ConvexPolygon(rect),polygon)
 end
 function Base.in(polygon::ConvexPolygon,circle::Circle)
-    cpt = VecE2(circle.x,circle.y)
+    cpt = get_center(circle)
     for pt in polygon.pts
         if norm(cpt-pt) > circle.r
             return false
@@ -456,11 +458,11 @@ function Base.in(rect::Rectangle,circle::Circle)
     Base.in(ConvexPolygon(rect),circle)
 end
 function Base.in(c1::Circle,c2::Circle)
-    return norm([c1.x,c1.y]-[c2.x,c2.y]) + c1.r < c2.r
+    return norm(get_center(c1)-get_center(c2)) + c1.r < c2.r
 end
 function Base.in(circle::Circle,rect::Rectangle)
-    if min(rect.pt1.x,rect.pt2.x) + circle.r <= circle.x <= max(rect.pt1.x,rect.pt2.x) - circle.r
-        if min(rect.pt1.y,rect.pt2.y) + circle.r <= circle.y <= max(rect.pt1.y,rect.pt2.y) - circle.r
+    if min(rect.pt1.x,rect.pt2.x) + circle.r <= get_center(circle).x <= max(rect.pt1.x,rect.pt2.x) - circle.r
+        if min(rect.pt1.y,rect.pt2.y) + circle.r <= get_center(circle).y <= max(rect.pt1.y,rect.pt2.y) - circle.r
             return true
         end
     end
@@ -522,12 +524,12 @@ function get_displacement(P::VecE2, circle::Circle;solid::Bool=true)
     if P ∈ circle
         return VecE2(0.0,0.0)
     else
-        c = VecE2(circle.x,circle.y) - P
+        c = get_center(circle) - P
         return c * (1.0 - circle.r/norm(c))
     end
 end
 function get_displacement(c1::Circle, c2::Circle;solid::Bool=true)
-    get_displacement(VecE2(c1.x,c1.y),Circle(c2.x,c2.y,c1.r+c2.r))
+    get_displacement(get_center(c1),Circle(get_center(c2),c1.r+c2.r))
 end
 function get_displacement(poly::ConvexPolygon,P::VecE2;solid::Bool=true)
     return -get_displacement(P,poly)
@@ -650,7 +652,7 @@ function minkowski_sum!(P::ConvexPolygon, Q::Circle, retval::ConvexPolygon=Conve
         b = norm(v2-v1)/2
         c = b^2 / a
         v = (Q.r * (a+c)) * normalize(v)
-        push!(retval,P.pts[i] + (v + VecE2(Q.x,Q.y)))
+        push!(retval,P.pts[i] + (v + get_center(Q)))
     end
     # sort_pts!(retval)
     retval
@@ -729,22 +731,22 @@ function nearest_free_space(circle::Circle,rect::Rectangle)
     Δy = 0.0
     rcenter = VecE2((rect.pt1.x+rect.pt2.x)/2,(rect.pt1.y+rect.pt2.y)/2)
     rwidth = VecE2(abs(rect.pt2.x-rect.pt1.x),abs(rect.pt2.y-rect.pt1.y))
-    if abs(circle.x - rcenter[1]) <= circle.r+rwidth[1]/2
-        if abs(circle.y - rcenter[2]) <= circle.r+rwidth[2]/2
+    if abs(get_center(circle).x - rcenter[1]) <= circle.r+rwidth[1]/2
+        if abs(get_center(circle).y - rcenter[2]) <= circle.r+rwidth[2]/2
             targetX = rcenter[1]
             targetY = rcenter[2]
-            if circle.x < rcenter[1]
+            if get_center(circle).x < rcenter[1]
                 targetX = (rcenter[1]-(rwidth[1]/2+circle.r))
             else
                 targetX = (rcenter[1]+(rwidth[1]/2+circle.r))
             end
-            if circle.y < rcenter[2]
+            if get_center(circle).y < rcenter[2]
                 targetY = (rcenter[2]-(rwidth[2]/2+circle.r))
             else
                 targetY = (rcenter[2]+(rwidth[2]/2+circle.r))
             end
-            Δx = targetX - circle.x
-            Δy = targetY - circle.y
+            Δx = targetX - get_center(circle).x
+            Δy = targetY - get_center(circle).y
         end
     end
     if abs(Δx) < abs(Δy)
@@ -767,7 +769,7 @@ function nearest_free_space(circle::Circle,polygon::ConvexPolygon)
             pt2 = polygon.pts[1]
         end
         # projection
-        q = VecE2(circle.x,circle.y) - pt1
+        q = get_center(circle) - pt1
         v = (pt2-pt1)/norm(pt2-pt1)
         b = v*dot(q,v) # footpoint
         d = sign(cross(q,v)) # direction (outward is positive)
@@ -790,7 +792,7 @@ function nearest_in_bounds_space(circle::Circle,polygon::ConvexPolygon)
         get vector to nearest free space between circular agent and rectangular obstacle
     """
     p = offset_polygon(polygon,-circle.r)
-    get_displacement(VecE2(circle.x,circle.y),p)
+    get_displacement(get_center(circle),p)
     # if c ∈ p
     #     return VecE2(0.0,0.0)
     # end
