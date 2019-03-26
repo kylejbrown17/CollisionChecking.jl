@@ -249,7 +249,7 @@ function Vec.intersects(seg::LineSegment,poly::ConvexPolygon)
     end
     return false
 end
-function Vec.intersects(seg::LineSegment,objects::Vector{ConvexPolygon})
+function Vec.intersects(seg::LineSegment,objects::Vector{P} where {P <: ConvexPolygon}) 
     for o in objects
         if intersects(seg,o)
             return true
