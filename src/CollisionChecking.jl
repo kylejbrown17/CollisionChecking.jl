@@ -225,7 +225,7 @@ function Base.in(v::VecE2, poly::ConvexPolygon)
     end
     true
 end
-function Base.in(v::VecE2, polygons::Vector{ConvexPolygon})
+function Base.in(v::VecE2, polygons::Vector{P} where {P <: ConvexPolygon})
     for p in polygons
         if v in p
             return true
@@ -276,28 +276,8 @@ function penetration(v::VecE2,polygon::ConvexPolygon)
         end
     end
     return d_max
-
-    # n = length(polygon.pts)
-    # d_max = -Inf
-    # for i in 1:n
-    #     pt1 = polygon.pts[i]
-    #     if i < n
-    #         pt2 = polygon.pts[i+1]
-    #     else
-    #         pt2 = polygon.pts[1]
-    #     end
-    #     q = pt - pt1
-    #     v = (pt2-pt1)/norm(pt2-pt1)
-    #     d = sign(cross([q;0],[v;0])[end])
-    #     if d > 0.0 # Changed this from >= 0.0. Not sure if it will cause major trouble...
-    #         return 0.0
-    #     else
-    #         d_max = max(-get_distance(seg, v),d_max)
-    #     end
-    # end
-    # return -d_max
 end
-function penetration(pt::VecE2,polygons::Vector{ConvexPolygon})
+function penetration(pt::VecE2,polygons::Vector{P} where {P <: ConvexPolygon})
     for p in polygons
         if pt in p
             return penetration(pt,p)
