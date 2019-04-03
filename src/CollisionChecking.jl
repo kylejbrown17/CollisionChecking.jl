@@ -17,6 +17,7 @@ export
     Rectangle,
     get_width,
     get_height,
+    get_origin,
 
     cyclic_shift_left!,
     cyclic_shift!,
@@ -85,6 +86,7 @@ end
 
 get_width(rect::Rectangle) = rect.pt2.x - rect.pt1.x
 get_height(rect::Rectangle) = rect.pt2.y - rect.pt1.y
+get_origin(rect::Rectangle) = rect.pt1
 get_width(shape::Union{Circle,ConvexPolygon}) = get_width(Rectangle(shape))
 get_height(shape::Union{Circle,ConvexPolygon}) = get_height(Rectangle(shape))
 # Rectangle(rect::Rectangle) = Rectangle(rect.pt1,rect.pt2)
